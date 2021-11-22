@@ -1,0 +1,1948 @@
+## "Extricating human tumor-enriched immune alterations from non-malignant tissue inflammation"
+## Script for integrating scRNA-seq data from OM and HNSCC samples
+## Input CD3+ sorted T population as well as Lin-HLADR+ population
+## Florian Mair, last updated 2021-11-09
+
+## Load required packages
+library(Seurat)
+library(tidyverse)
+library(MAST)
+library(RColorBrewer)
+library(doMC)
+library(data.table)
+library(circlize)
+library(reticulate)
+library(future)
+library(ggplot2)
+library(sctransform)
+library(dplyr)
+library(scater)
+library(loomR)
+library(scran)
+library(SeuratWrappers)
+library(harmony)
+library(SingleCellExperiment)
+library(Seurat)
+library(scater)
+library(SingleR)
+library(scRNAseq)
+sessionInfo()
+
+## Enable parallelization in Seurat and MAST, adjust according to the number of cores on your computer
+plan("multiprocess", workers = 7)
+options(mc.cores = 7)
+knitr::opts_chunk$set(message = F, error = F, warning = F, cache = F, fig.width = 2, fig.height = 6, auto.dep = T)
+
+## Deal with the RAM issue
+options(future.globals.maxSize = 5000 * 1024^2)
+
+## Set working directory
+setwd('yourworkingdirectory')
+
+######## Process all CD3 T cell data sets
+## Load all the mucosa datasets
+CD3_M_121_Blood <- Read10X(data.dir = 'CD3/121_OB')
+CD3_M_121_Mucosa <- Read10X(data.dir = 'CD3/121_OM')
+
+CD3_M_122_Blood <- Read10X(data.dir = 'CD3/122_OB')
+CD3_M_122_Mucosa <- Read10X(data.dir = 'CD3/122_OM')
+
+CD3_M_124_Blood <- Read10X(data.dir = 'CD3/124_OB')
+CD3_M_124_Mucosa <- Read10X(data.dir = 'CD3/124_OM')
+
+CD3_M_125_Blood <- Read10X(data.dir = 'CD3/125_OB')
+CD3_M_125_Mucosa <- Read10X(data.dir = 'CD3/125_OM')
+
+## Load all the tumor datasets
+CD3_T002_Blood <- Read10X(data.dir = 'CD3/Tum002_Blood')
+CD3_T002_Inf <- Read10X(data.dir = 'CD3/Tum002_Inf')
+
+CD3_T015_Blood <- Read10X(data.dir = 'CD3/Tum015_Blood')
+
+CD3_T020_Blood <- Read10X(data.dir = 'CD3/Tum020_Blood')
+CD3_T020_Inf <- Read10X(data.dir = 'CD3/Tum020_Inf')
+
+CD3_T027_Blood <- Read10X(data.dir = 'CD3/Tum027_Blood')
+CD3_T027_Inf <- Read10X(data.dir = 'CD3/Tum027_Inf')
+
+## Create all T cell Seurat objects, do QC and filtering
+CD3_Blood_Donor1 <- CreateSeuratObject(counts = CD3_M_121_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor1 <- RenameCells(CD3_Blood_Donor1, add.cell.id = "CD3_M_121_Blood")
+CD3_Blood_Donor1@meta.data$sample <- "CD3_M_121_Blood"
+CD3_Blood_Donor1@meta.data$donor <- "Donor 1"
+CD3_Blood_Donor1[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor1, pattern = "^MT-")
+CD3_Blood_Donor1[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor1, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor1_clean <- subset(CD3_Blood_Donor1, subset = nFeature_RNA > 200 & nFeature_RNA < 1800 & percent.mt < 7)
+
+
+CD3_Mucosa_Donor1 <- CreateSeuratObject(counts = CD3_M_121_Mucosa, assay = "RNA",
+                                    min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                    min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                    project = 'Mucosa')
+CD3_Mucosa_Donor1 <- RenameCells(CD3_Mucosa_Donor1, add.cell.id = "CD3_M_121_Mucosa")
+CD3_Mucosa_Donor1@meta.data$sample <- "CD3_M_121_Mucosa"
+CD3_Mucosa_Donor1@meta.data$donor <- "Donor 1"
+CD3_Mucosa_Donor1[["percent.mt"]] <- PercentageFeatureSet(CD3_Mucosa_Donor1, pattern = "^MT-")
+CD3_Mucosa_Donor1[["percent.ribo"]] <- PercentageFeatureSet(CD3_Mucosa_Donor1, pattern = "^RP")
+VlnPlot(CD3_Mucosa_Donor1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Mucosa_Donor1_clean <- subset(CD3_Mucosa_Donor1, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Blood_Donor2 <- CreateSeuratObject(counts = CD3_M_122_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor2 <- RenameCells(CD3_Blood_Donor2, add.cell.id = "CD3_M_122_Blood")
+CD3_Blood_Donor2@meta.data$sample <- "CD3_M_122_Blood"
+CD3_Blood_Donor2@meta.data$donor <- "Donor 2"
+CD3_Blood_Donor2[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor2, pattern = "^MT-")
+CD3_Blood_Donor2[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor2, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor2_clean <- subset(CD3_Blood_Donor2, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Mucosa_Donor2 <- CreateSeuratObject(counts = CD3_M_122_Mucosa, assay = "RNA",
+                                    min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                    min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                    project = 'Mucosa')
+CD3_Mucosa_Donor2 <- RenameCells(CD3_Mucosa_Donor2, add.cell.id = "CD3_M_122_Mucosa")
+CD3_Mucosa_Donor2@meta.data$sample <- "CD3_M_122_Mucosa"
+CD3_Mucosa_Donor2@meta.data$donor <- "Donor 2"
+CD3_Mucosa_Donor2[["percent.mt"]] <- PercentageFeatureSet(CD3_Mucosa_Donor2, pattern = "^MT-")
+CD3_Mucosa_Donor2[["percent.ribo"]] <- PercentageFeatureSet(CD3_Mucosa_Donor2, pattern = "^RP")
+VlnPlot(CD3_Mucosa_Donor2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Mucosa_Donor2_clean <- subset(CD3_Mucosa_Donor2, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Blood_Donor3 <- CreateSeuratObject(counts = CD3_M_124_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor3 <- RenameCells(CD3_Blood_Donor3, add.cell.id = "CD3_M_124_Blood")
+CD3_Blood_Donor3@meta.data$sample <- "CD3_M_124_Blood"
+CD3_Blood_Donor3@meta.data$donor <- "Donor 3"
+CD3_Blood_Donor3[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor3, pattern = "^MT-")
+CD3_Blood_Donor3[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor3, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor3_clean <- subset(CD3_Blood_Donor3, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Mucosa_Donor3 <- CreateSeuratObject(counts = CD3_M_124_Mucosa, assay = "RNA",
+                                    min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                    min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                    project = 'Mucosa')
+CD3_Mucosa_Donor3 <- RenameCells(CD3_Mucosa_Donor3, add.cell.id = "CD3_M_124_Mucosa")
+CD3_Mucosa_Donor3@meta.data$sample <- "CD3_M_124_Mucosa"
+CD3_Mucosa_Donor3@meta.data$donor <- "Donor 3"
+CD3_Mucosa_Donor3[["percent.mt"]] <- PercentageFeatureSet(CD3_Mucosa_Donor3, pattern = "^MT-")
+CD3_Mucosa_Donor3[["percent.ribo"]] <- PercentageFeatureSet(CD3_Mucosa_Donor3, pattern = "^RP")
+VlnPlot(CD3_Mucosa_Donor3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Mucosa_Donor3_clean <- subset(CD3_Mucosa_Donor3, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 10)
+
+CD3_Blood_Donor4 <- CreateSeuratObject(counts = CD3_M_125_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor4 <- RenameCells(CD3_Blood_Donor4, add.cell.id = "CD3_M_125_Blood")
+CD3_Blood_Donor4@meta.data$sample <- "CD3_M_125_Blood"
+CD3_Blood_Donor4@meta.data$donor <- "Donor 4"
+CD3_Blood_Donor4[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor4, pattern = "^MT-")
+CD3_Blood_Donor4[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor4, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor4_clean <- subset(CD3_Blood_Donor4, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Mucosa_Donor4 <- CreateSeuratObject(counts = CD3_M_125_Mucosa, assay = "RNA",
+                                    min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                    min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                    project = 'Mucosa')
+CD3_Mucosa_Donor4 <- RenameCells(CD3_Mucosa_Donor4, add.cell.id = "CD3_M_125_Mucosa")
+CD3_Mucosa_Donor4@meta.data$sample <- "CD3_M_125_Mucosa"
+CD3_Mucosa_Donor4@meta.data$donor <- "Donor 4"
+CD3_Mucosa_Donor4[["percent.mt"]] <- PercentageFeatureSet(CD3_Mucosa_Donor4, pattern = "^MT-")
+CD3_Mucosa_Donor4[["percent.ribo"]] <- PercentageFeatureSet(CD3_Mucosa_Donor4, pattern = "^RP")
+VlnPlot(CD3_Mucosa_Donor4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Mucosa_Donor4_clean <- subset(CD3_Mucosa_Donor4, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+
+CD3_Blood_Donor5 <- CreateSeuratObject(counts = CD3_T002_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor5 <- RenameCells(CD3_Blood_Donor5, add.cell.id = "CD3_T002_Blood")
+CD3_Blood_Donor5@meta.data$sample <- "CD3_T002_Blood"
+CD3_Blood_Donor5@meta.data$donor <- "Donor 5"
+CD3_Blood_Donor5[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor5, pattern = "^MT-")
+CD3_Blood_Donor5[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor5, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor5_clean <- subset(CD3_Blood_Donor5, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Tumor_Donor5 <- CreateSeuratObject(counts = CD3_T002_Inf, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Tumor')
+CD3_Tumor_Donor5 <- RenameCells(CD3_Tumor_Donor5, add.cell.id = "CD3_T002_Inf")
+CD3_Tumor_Donor5@meta.data$sample <- "CD3_T002_Inf"
+CD3_Tumor_Donor5@meta.data$donor <- "Donor 5"
+CD3_Tumor_Donor5[["percent.mt"]] <- PercentageFeatureSet(CD3_Tumor_Donor5, pattern = "^MT-")
+CD3_Tumor_Donor5[["percent.ribo"]] <- PercentageFeatureSet(CD3_Tumor_Donor5, pattern = "^RP")
+VlnPlot(CD3_Tumor_Donor5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Tumor_Donor5_clean <- subset(CD3_Tumor_Donor5, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+CD3_Blood_Donor6 <- CreateSeuratObject(counts = CD3_T015_Blood, assay = "RNA",
+                                    min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                    min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                    project = 'Blood')
+CD3_Blood_Donor6 <- RenameCells(CD3_Blood_Donor6, add.cell.id = "CD3_T015_Blood")
+CD3_Blood_Donor6@meta.data$sample <- "CD3_T015_Blood"
+CD3_Blood_Donor6@meta.data$donor <- "Donor 6"
+CD3_Blood_Donor6[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor6, pattern = "^MT-")
+CD3_Blood_Donor6[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor6, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor6, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor6_clean <- subset(CD3_Blood_Donor6, subset = nFeature_RNA > 200 & nFeature_RNA < 2000 & percent.mt < 7)
+
+
+CD3_Blood_Donor7 <- CreateSeuratObject(counts = CD3_T020_Blood, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Blood')
+CD3_Blood_Donor7 <- RenameCells(CD3_Blood_Donor7, add.cell.id = "CD3_T020_Blood")
+CD3_Blood_Donor7@meta.data$sample <- "CD3_T020_Blood"
+CD3_Blood_Donor7@meta.data$donor <- "Donor 7"
+CD3_Blood_Donor7[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor7, pattern = "^MT-")
+CD3_Blood_Donor7[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor7, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor7_clean <- subset(CD3_Blood_Donor7, subset = nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 12)
+
+CD3_Tumor_Donor7 <- CreateSeuratObject(counts = CD3_T020_Inf, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Tumor')
+CD3_Tumor_Donor7 <- RenameCells(CD3_Tumor_Donor7, add.cell.id = "CD3_T020_Inf")
+CD3_Tumor_Donor7@meta.data$sample <- "CD3_T020_Inf"
+CD3_Blood_Donor7@meta.data$donor <- "Donor 7"
+CD3_Tumor_Donor7[["percent.mt"]] <- PercentageFeatureSet(CD3_Tumor_Donor7, pattern = "^MT-")
+CD3_Tumor_Donor7[["percent.ribo"]] <- PercentageFeatureSet(CD3_Tumor_Donor7, pattern = "^RP")
+VlnPlot(CD3_Tumor_Donor7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Tumor_Donor7_clean <- subset(CD3_Tumor_Donor7, subset = nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 12)
+
+CD3_Blood_Donor8 <- CreateSeuratObject(counts = CD3_T027_Blood, assay = "RNA",
+                                       min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                       min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                       project = 'Blood')
+CD3_Blood_Donor8 <- RenameCells(CD3_Blood_Donor8, add.cell.id = "CD3_T027_Blood")
+CD3_Blood_Donor8@meta.data$sample <- "CD3_T027_Blood"
+CD3_Blood_Donor8@meta.data$donor <- "Donor 8"
+CD3_Blood_Donor8[["percent.mt"]] <- PercentageFeatureSet(CD3_Blood_Donor8, pattern = "^MT-")
+CD3_Blood_Donor8[["percent.ribo"]] <- PercentageFeatureSet(CD3_Blood_Donor8, pattern = "^RP")
+VlnPlot(CD3_Blood_Donor8, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Blood_Donor8_clean <- subset(CD3_Blood_Donor8, subset = nFeature_RNA > 800 & nFeature_RNA < 3000 & percent.mt < 15)
+
+CD3_Tumor_Donor8 <- CreateSeuratObject(counts = CD3_T027_Inf, assay = "RNA",
+                                       min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                       min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                       project = 'Tumor')
+CD3_Tumor_Donor8 <- RenameCells(CD3_Tumor_Donor8, add.cell.id = "CD3_T027_Inf")
+CD3_Tumor_Donor8@meta.data$sample <- "CD3_T027_Inf"
+CD3_Tumor_Donor8@meta.data$donor <- "Donor 8"
+CD3_Tumor_Donor8[["percent.mt"]] <- PercentageFeatureSet(CD3_Tumor_Donor8, pattern = "^MT-")
+CD3_Tumor_Donor8[["percent.ribo"]] <- PercentageFeatureSet(CD3_Tumor_Donor8, pattern = "^RP")
+VlnPlot(CD3_Tumor_Donor8, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+CD3_Tumor_Donor8_clean <- subset(CD3_Tumor_Donor8, subset = nFeature_RNA >800 & nFeature_RNA < 3000 & percent.mt < 12)
+
+## Generate merged CD3 object with metadata
+CD3.merged <- merge(CD3_Blood_Donor1_clean, c(CD3_Mucosa_Donor1_clean, CD3_Blood_Donor2_clean, CD3_Mucosa_Donor2_clean, CD3_Blood_Donor3_clean, 
+                                              CD3_Mucosa_Donor3_clean, CD3_Blood_Donor4_clean, CD3_Mucosa_Donor4_clean,
+                                              CD3_Blood_Donor5_clean, CD3_Tumor_Donor5_clean, CD3_Blood_Donor6_clean, 
+                                              CD3_Blood_Donor7_clean, CD3_Tumor_Donor7_clean, CD3_Blood_Donor8_clean, CD3_Tumor_Donor8_clean))
+CD3.merged
+CD3.merged@meta.data$celltype <- "CD3"
+
+
+########## Process all HLADR data sets
+## Load all the mucosa datasets
+HLADR_M_121_Blood <- Read10X(data.dir = 'HLADR/121_OB')
+HLADR_M_121_Mucosa <- Read10X(data.dir = 'HLADR/121_OM')
+
+HLADR_M_122_Blood <- Read10X(data.dir = 'HLADR/122_OB')
+HLADR_M_122_Mucosa <- Read10X(data.dir = 'HLADR/122_OM')
+
+HLADR_M_124_Mucosa <- Read10X(data.dir = 'HLADR/124_OM')
+
+HLADR_M_125_Blood <- Read10X(data.dir = 'HLADR/125_OB')
+HLADR_M_125_Mucosa <- Read10X(data.dir = 'HLADR/125_OM')
+
+## Load all the tumor datasets
+HLADR_T002_Blood <- Read10X(data.dir = 'HLADR/Tum002_Blood')
+HLADR_T002_Inf <- Read10X(data.dir = 'HLADR/Tum002_Inf')
+
+HLADR_T015_Inf <- Read10X(data.dir = 'HLADR/Tum015_Inf')
+
+HLADR_T020_Blood <- Read10X(data.dir = 'HLADR/Tum020_Blood')
+HLADR_T020_Inf <- Read10X(data.dir = 'HLADR/Tum020_Inf')
+
+HLADR_T027_Blood <- Read10X(data.dir = 'HLADR/Tum027_Blood')
+HLADR_T027_Inf <- Read10X(data.dir = 'HLADR/Tum027_Inf')
+
+## Create all HLADR Seurat objects, do QC and filtering
+HLADR_Blood_Donor1 <- CreateSeuratObject(counts = HLADR_M_121_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor1 <- RenameCells(HLADR_Blood_Donor1, add.cell.id = "HLADR_M_121_Blood")
+HLADR_Blood_Donor1@meta.data$sample <- "HLADR_M_121_Blood"
+HLADR_Blood_Donor1@meta.data$donor <- "Donor 1"
+HLADR_Blood_Donor1[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor1, pattern = "^MT-")
+HLADR_Blood_Donor1[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor1, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor1_clean <- subset(HLADR_Blood_Donor1, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+
+HLADR_Mucosa_Donor1 <- CreateSeuratObject(counts = HLADR_M_121_Mucosa, assay = "RNA",
+                                          min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                          min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                          project = 'Mucosa')
+HLADR_Mucosa_Donor1 <- RenameCells(HLADR_Mucosa_Donor1, add.cell.id = "HLADR_M_121_Mucosa")
+HLADR_Mucosa_Donor1@meta.data$sample <- "HLADR_M_121_Mucosa"
+HLADR_Mucosa_Donor1@meta.data$donor <- "Donor 1"
+HLADR_Mucosa_Donor1[["percent.mt"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor1, pattern = "^MT-")
+HLADR_Mucosa_Donor1[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor1, pattern = "^RP")
+VlnPlot(HLADR_Mucosa_Donor1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Mucosa_Donor1_clean <- subset(HLADR_Mucosa_Donor1, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+HLADR_Blood_Donor2 <- CreateSeuratObject(counts = HLADR_M_122_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor2 <- RenameCells(HLADR_Blood_Donor2, add.cell.id = "HLADR_M_122_Blood")
+HLADR_Blood_Donor2@meta.data$sample <- "HLADR_M_122_Blood"
+HLADR_Blood_Donor2@meta.data$donor <- "Donor 2"
+HLADR_Blood_Donor2[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor2, pattern = "^MT-")
+HLADR_Blood_Donor2[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor2, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor2_clean <- subset(HLADR_Blood_Donor2, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 7)
+
+HLADR_Mucosa_Donor2 <- CreateSeuratObject(counts = HLADR_M_122_Mucosa, assay = "RNA",
+                                          min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                          min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                          project = 'Mucosa')
+HLADR_Mucosa_Donor2 <- RenameCells(HLADR_Mucosa_Donor2, add.cell.id = "HLADR_M_122_Mucosa")
+HLADR_Mucosa_Donor2@meta.data$sample <- "HLADR_M_122_Mucosa"
+HLADR_Mucosa_Donor2@meta.data$donor <- "Donor 2"
+HLADR_Mucosa_Donor2[["percent.mt"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor2, pattern = "^MT-")
+HLADR_Mucosa_Donor2[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor2, pattern = "^RP")
+VlnPlot(HLADR_Mucosa_Donor2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Mucosa_Donor2_clean <- subset(HLADR_Mucosa_Donor2, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 7)
+
+HLADR_Mucosa_Donor3 <- CreateSeuratObject(counts = HLADR_M_124_Mucosa, assay = "RNA",
+                                          min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                          min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                          project = 'Mucosa')
+HLADR_Mucosa_Donor3 <- RenameCells(HLADR_Mucosa_Donor3, add.cell.id = "HLADR_M_124_Mucosa")
+HLADR_Mucosa_Donor3@meta.data$sample <- "HLADR_M_124_Mucosa"
+HLADR_Mucosa_Donor3@meta.data$donor <- "Donor 3"
+HLADR_Mucosa_Donor3[["percent.mt"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor3, pattern = "^MT-")
+HLADR_Mucosa_Donor3[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor3, pattern = "^RP")
+VlnPlot(HLADR_Mucosa_Donor3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Mucosa_Donor3_clean <- subset(HLADR_Mucosa_Donor3, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+HLADR_Blood_Donor4 <- CreateSeuratObject(counts = HLADR_M_125_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor4 <- RenameCells(HLADR_Blood_Donor4, add.cell.id = "HLADR_M_125_Blood")
+HLADR_Blood_Donor4@meta.data$sample <- "HLADR_M_125_Blood"
+HLADR_Blood_Donor4@meta.data$donor <- "Donor 4"
+HLADR_Blood_Donor4[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor4, pattern = "^MT-")
+HLADR_Blood_Donor4[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor4, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor4_clean <- subset(HLADR_Blood_Donor4, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+HLADR_Mucosa_Donor4 <- CreateSeuratObject(counts = HLADR_M_125_Mucosa, assay = "RNA",
+                                          min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                          min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                          project = 'Mucosa')
+HLADR_Mucosa_Donor4 <- RenameCells(HLADR_Mucosa_Donor4, add.cell.id = "HLADR_M_125_Mucosa")
+HLADR_Mucosa_Donor4@meta.data$sample <- "HLADR_M_125_Mucosa"
+HLADR_Mucosa_Donor4@meta.data$donor <- "Donor 4"
+HLADR_Mucosa_Donor4[["percent.mt"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor4, pattern = "^MT-")
+HLADR_Mucosa_Donor4[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Mucosa_Donor4, pattern = "^RP")
+VlnPlot(HLADR_Mucosa_Donor4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Mucosa_Donor4_clean <- subset(HLADR_Mucosa_Donor4, subset = nFeature_RNA > 200 & nFeature_RNA < 3000 & percent.mt < 10)
+
+
+HLADR_Blood_Donor5 <- CreateSeuratObject(counts = HLADR_T002_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor5 <- RenameCells(HLADR_Blood_Donor5, add.cell.id = "HLADR_T002_Blood")
+HLADR_Blood_Donor5@meta.data$sample <- "HLADR_T002_Blood"
+HLADR_Blood_Donor5@meta.data$donor <- "Donor 5"
+HLADR_Blood_Donor5[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor5, pattern = "^MT-")
+HLADR_Blood_Donor5[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor5, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor5_clean <- subset(HLADR_Blood_Donor5, subset = nFeature_RNA > 200 & nFeature_RNA < 1500 & percent.mt < 10)
+
+HLADR_Tumor_Donor5 <- CreateSeuratObject(counts = HLADR_T002_Inf, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Tumor')
+HLADR_Tumor_Donor5 <- RenameCells(HLADR_Tumor_Donor5, add.cell.id = "HLADR_T002_Inf")
+HLADR_Tumor_Donor5@meta.data$sample <- "HLADR_T002_Inf"
+HLADR_Tumor_Donor5@meta.data$donor <- "Donor 5"
+HLADR_Tumor_Donor5[["percent.mt"]] <- PercentageFeatureSet(HLADR_Tumor_Donor5, pattern = "^MT-")
+HLADR_Tumor_Donor5[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Tumor_Donor5, pattern = "^RP")
+VlnPlot(HLADR_Tumor_Donor5, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Tumor_Donor5_clean <- subset(HLADR_Tumor_Donor5, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+HLADR_Tumor_Donor6 <- CreateSeuratObject(counts = HLADR_T015_Inf, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Tumor')
+HLADR_Tumor_Donor6 <- RenameCells(HLADR_Tumor_Donor6, add.cell.id = "HLADR_T015_Inf")
+HLADR_Tumor_Donor6@meta.data$sample <- "HLADR_T015_Inf"
+HLADR_Tumor_Donor6@meta.data$donor <- "Donor 6"
+HLADR_Tumor_Donor6[["percent.mt"]] <- PercentageFeatureSet(HLADR_Tumor_Donor6, pattern = "^MT-")
+HLADR_Tumor_Donor6[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Tumor_Donor6, pattern = "^RP")
+VlnPlot(HLADR_Tumor_Donor6, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Tumor_Donor6_clean <- subset(HLADR_Tumor_Donor6, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 10)
+
+HLADR_Blood_Donor7 <- CreateSeuratObject(counts = HLADR_T020_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor7 <- RenameCells(HLADR_Blood_Donor7, add.cell.id = "HLADR_T020_Blood")
+HLADR_Blood_Donor7@meta.data$sample <- "HLADR_T020_Blood"
+HLADR_Blood_Donor7@meta.data$donor <- "Donor 7"
+HLADR_Blood_Donor7[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor7, pattern = "^MT-")
+HLADR_Blood_Donor7[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor7, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor7_clean <- subset(HLADR_Blood_Donor7, subset = nFeature_RNA > 800 & nFeature_RNA < 4500 & percent.mt < 12)
+
+
+HLADR_Tumor_Donor7 <- CreateSeuratObject(counts = HLADR_T020_Inf, assay = "RNA",
+                                   min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                   min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                   project = 'Tumor')
+HLADR_Tumor_Donor7 <- RenameCells(HLADR_Tumor_Donor7, add.cell.id = "HLADR_T020_Inf")
+HLADR_Tumor_Donor7@meta.data$sample <- "HLADR_T020_Inf"
+HLADR_Tumor_Donor7@meta.data$donor <- "Donor 7"
+HLADR_Tumor_Donor7[["percent.mt"]] <- PercentageFeatureSet(HLADR_Tumor_Donor7, pattern = "^MT-")
+HLADR_Tumor_Donor7[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Tumor_Donor7, pattern = "^RP")
+VlnPlot(HLADR_Tumor_Donor7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Tumor_Donor7_clean <- subset(HLADR_Tumor_Donor7, subset = nFeature_RNA > 800 & nFeature_RNA < 4500 & percent.mt < 12)
+
+HLADR_Blood_Donor8 <- CreateSeuratObject(counts = HLADR_T027_Blood, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Blood')
+HLADR_Blood_Donor8 <- RenameCells(HLADR_Blood_Donor8, add.cell.id = "HLADR_T027_Blood")
+HLADR_Blood_Donor8@meta.data$sample <- "HLADR_T027_Blood"
+HLADR_Blood_Donor8@meta.data$donor <- "Donor 8"
+HLADR_Blood_Donor8[["percent.mt"]] <- PercentageFeatureSet(HLADR_Blood_Donor8, pattern = "^MT-")
+HLADR_Blood_Donor8[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Blood_Donor8, pattern = "^RP")
+VlnPlot(HLADR_Blood_Donor8, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Blood_Donor8_clean <- subset(HLADR_Blood_Donor8, subset = nFeature_RNA > 800 & nFeature_RNA < 4000 & percent.mt < 12)
+
+
+HLADR_Tumor_Donor8 <- CreateSeuratObject(counts = HLADR_T027_Inf, assay = "RNA",
+                                         min.cells = 3, # Include genes with detected expression in at least this many cells (3 cells)
+                                         min.features = 200, # Include cells where at least this many genes are detected (200 genes)
+                                         project = 'Tumor')
+HLADR_Tumor_Donor8 <- RenameCells(HLADR_Tumor_Donor8, add.cell.id = "HLADR_T027_Inf")
+HLADR_Tumor_Donor8@meta.data$sample <- "HLADR_T027_Inf"
+HLADR_Tumor_Donor8@meta.data$donor <- "Donor 8"
+HLADR_Tumor_Donor8[["percent.mt"]] <- PercentageFeatureSet(HLADR_Tumor_Donor8, pattern = "^MT-")
+HLADR_Tumor_Donor8[["percent.ribo"]] <- PercentageFeatureSet(HLADR_Tumor_Donor8, pattern = "^RP")
+VlnPlot(HLADR_Tumor_Donor8, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01)
+HLADR_Tumor_Donor8_clean <- subset(HLADR_Tumor_Donor8, subset = nFeature_RNA > 800 & nFeature_RNA < 4000 & percent.mt < 12)
+
+## Generate merged HLADR object
+HLADR.merged <- merge(HLADR_Blood_Donor1, c(HLADR_Mucosa_Donor1_clean, HLADR_Blood_Donor2_clean, HLADR_Mucosa_Donor2_clean, 
+                                            HLADR_Mucosa_Donor3_clean, HLADR_Blood_Donor4_clean, HLADR_Mucosa_Donor4_clean,
+                                            HLADR_Blood_Donor5_clean, HLADR_Tumor_Donor5_clean, HLADR_Tumor_Donor6_clean, 
+                                            HLADR_Blood_Donor7_clean, HLADR_Tumor_Donor7_clean, HLADR_Blood_Donor8_clean, HLADR_Tumor_Donor8_clean))
+HLADR.merged
+HLADR.merged@meta.data$celltype <- "HLADR"
+
+
+############# Standard Seurat processing workflow with Harmony
+## Generate merged object with all data for Harmony integration
+data.integrated <- merge(CD3.merged, HLADR.merged)
+data.integrated
+table(data.integrated@meta.data$orig.ident)
+table(data.integrated@meta.data$donor)
+table(data.integrated@meta.data$sample)
+
+data.integrated <- NormalizeData(data.integrated, verbose = T)
+data.integrated <- FindVariableFeatures(data.integrated, selection.method = "vst", nfeatures = 2000, verbose = T)
+data.integrated <- ScaleData(data.integrated, verbose = T)
+data.integrated <- RunPCA(data.integrated, pc.genes = data.integrated@var.genes, npcs = 75, verbose = T)
+ElbowPlot(data.integrated, ndims = 75)
+
+## Run Harmony based with tweaked lambda and theta
+data.integrated <- RunHarmony(data.integrated, group.by.vars = "sample",
+                          lambda = 1.5, theta = 3, plot_convergence = T, verbose = T, 
+                          assay.use = "RNA", reduction.save = "harmony")
+
+## Perform UMAP calculation and graph-based clustering based on the harmony reduction
+data.integrated <- RunUMAP(data.integrated, reduction = "harmony", dims = 1:30)
+data.integrated <- FindNeighbors(data.integrated, reduction = "harmony", dims = 1:30, verbose = T)
+data.integrated <- FindClusters(data.integrated, resolution = 0.8, random.seed = 42, verbose = T)
+
+## Plotting and having a look at the data
+color.vector <- c(brewer.pal(8, "Set1"), brewer.pal(12, "Set3"), brewer.pal(8, "Dark2"), brewer.pal(8, "Accent"))
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = F, group.by="orig.ident", cols = brewer.pal(3, "Set1"))
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = F, group.by="celltype", cols = brewer.pal(3, "Set1"))
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = F, group.by="sample", cols = color.vector)
+
+## Plotting some key lineage transcripts across all clusters
+FeaturePlot(data.integrated, features = c("CD14", "ITGAX", "IL3RA", "CD79A", "IGHM", "CD3E", "FOXP3", "CD4", "CD8B"), 
+            pt.size = 0.1, ncol = 3)
+VlnPlot(object = data.integrated,
+        features = c("CD14", "ITGAX", "IL3RA", "CD79A", "IGHM", "CD3E", "FOXP3", "CD4", "CD8B"), pt.size = 0, ncol = 3)
+table(data.integrated@meta.data$RNA_snn_res.0.8, data.integrated@meta.data$orig.ident)
+
+######### Perform cell labeling using SingleR (use MonacoImmuneData as reference) based on vignette
+## convert Seurat object to a single cell experiment
+sce <- as.SingleCellExperiment(data.integrated)
+
+## reference data sets included in SingleR - the Monaco data set has worked ok for me (details about the reference see vignette)
+monaco.se <- MonacoImmuneData()
+
+## Grab the common genes between the query and reference data set
+common <- intersect(rownames(sce), rownames(monaco.se))
+monaco.se <- monaco.se[common,]
+sce <- sce[common,]
+
+## Test and reference sets should always be log normalized. The included reference sets are already normalized. 
+sce <- logNormCounts(sce)
+
+# Perform the actual SingleR annotation (one is fine labels, one is main labels)
+annotated.sce.fine <- SingleR(test = sce, ref = monaco.se, 
+                              labels = monaco.se$label.fine, assay.type.ref = "logcounts")
+annotated.sce <- SingleR(test = sce, ref = monaco.se, 
+                         labels = monaco.se$label.main, assay.type.ref = "logcounts")
+table(annotated.sce$labels)
+table(annotated.sce.fine$labels)
+
+# Plottig of annotation score from singleR, takes a while (don't run unless you need to)
+plotScoreHeatmap(annotated.sce.fine)
+
+## Take the labels from the sce object and turn them into a vector. 
+## Use that Vector to put it into the meta-data of your Seurat object
+monaco.labels <- annotated.sce$labels
+monaco.labels.fine <- annotated.sce.fine$labels
+
+data.integrated@meta.data$labels.fine <- monaco.labels.fine
+data.integrated@meta.data$labels <- monaco.labels
+
+table(data.integrated@meta.data$labels, data.integrated@meta.data$RNA_snn_res.0.8)
+table(data.integrated@meta.data$labels.fine, data.integrated@meta.data$RNA_snn_res.0.8)
+
+## Plotting on the UMAPS
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = T, group.by="labels", cols = color.vector)
+DimPlot(data.integrated, reduction = "umap", pt.size = 0.1, label = T, group.by="labels.fine", cols = color.vector)
+VlnPlot(data.integrated, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, cols = color.vector, y.max = 4000)
+VlnPlot(data.integrated, features = c("nCount_RNA"), ncol = 1, pt.size = 0, cols = color.vector, y.max = 15000)
+VlnPlot(data.integrated, features = c("CD79A"), ncol = 1, pt.size = 0, cols = color.vector)
+
+## Save Seurat object for later
+#saveRDS(data.integrated, file = "~/Desktop/CD3_and_HLADR_integrated_HARMONY_NEW.RDS")
+#data.integrated <- readRDS(file = "~/Desktop/CD3_and_HLADR_integrated_HARMONY_NEW.RDS")
+
+## Remove contaminating B cell clusters and rerun UMAP calculation and clustering (based on Harmony reduction)
+data.integrated.clean <- subset(data.integrated, idents = c(17,24,25), invert = T)
+data.integrated.clean
+data.integrated.clean <- FindVariableFeatures(data.integrated.clean, selection.method = "vst", nfeatures = 4000, verbose = T)
+data.integrated.clean <- ScaleData(data.integrated.clean, verbose = T)
+data.integrated.clean <- RunPCA(data.integrated.clean, npcs = 75, verbose = T)
+data.integrated.clean <- RunUMAP(data.integrated.clean, reduction = "harmony", dims = 1:50, n.neighbors = 10L, min.dist = 0.1)
+data.integrated.clean <- FindNeighbors(data.integrated.clean, reduction = "harmony", dims = 1:50, verbose = T)
+data.integrated.clean <- FindClusters(data.integrated.clean, resolution = 0.6, random.seed = 42, verbose = T)
+
+## Check some tables to see cell number distributions across donors, tissues and sorts, and check nFeature again
+table(data.integrated.clean@meta.data$donor, data.integrated.clean@meta.data$celltype)
+table(data.integrated.clean@meta.data$donor, data.integrated.clean@meta.data$orig.ident)
+table(data.integrated.clean@meta.data$donor, data.integrated.clean@meta.data$sample)
+table(data.integrated.clean@meta.data$sample, data.integrated.clean@meta.data$orig.ident)
+table(data.integrated.clean@meta.data$sample)
+data.integrated.clean
+
+FeaturePlot(data.integrated.clean, features = c("nCount_RNA", "nFeature_RNA"), 
+            pt.size = 0.1, ncol = 1)
+
+
+## Copy object and run UMAP without Harmony correction (just for presentation purposes)
+#temp <- data.integrated.clean
+#temp <- RunPCA(temp, npcs = 50, verbose = T)
+#temp <- RunUMAP(temp, reduction = "pca", dims = 1:30, n.neighbors = 10L, min.dist = 0.1)
+#DimPlot(temp, reduction = "umap", pt.size = 0.1, label = F, group.by="sample", cols = color.vector)
+
+
+## Plotting and exploring of cleaned data
+#Idents(data.integrated.clean) <- "RNA_snn_res.0.6"
+color.vector <- c(brewer.pal(8, "Set1"), brewer.pal(12, "Set3"), brewer.pal(8, "Dark2"), brewer.pal(8, "Accent"))
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+ggsave(filename = "DataALL UMAP plot by cluster.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="orig.ident", cols = brewer.pal(3, "Set1"))
+ggsave(filename = "DataALL UMAP plot by tissue.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="celltype", cols = brewer.pal(3, "Set1"))
+ggsave(filename = "DataALL UMAP plot by sort.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="sample", cols = color.vector)
+ggsave(filename = "DataALL UMAP plot by sample.png", plot = last_plot(), dpi = 300, width = 14, height = 10)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="labels", cols = brewer.pal(10, "Paired"))
+ggsave(filename = "DataALL UMAP plot by celltype.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="labels.fine", cols = color.vector)
+ggsave(filename = "DataALL UMAP plot by celltype fine.png", plot = last_plot(), dpi = 300, width = 14, height = 10)
+
+table(data.integrated.clean@meta.data$labels)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="labels",
+        cols = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#6a3d9a','#ff7f00','#fdbf6f','#e31a1c','#cab2d6','#fb9a99'))
+
+## Generating the Figure 2A for PAPER (overview of all cells tissue vs blood)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.01, label = F, 
+        group.by="orig.ident", cols = c("#377eb8", "#ff7f00", "#e41a1c"))
+
+
+## Simplify Monaco annotation to be more easily visualized/understood and omit the Th lineages
+automated.annotation <- unique(data.integrated.clean@meta.data$labels.fine)
+automated.annotation
+manual.annotation <- c("Naive CD8 T cells", "Naive CD4 T cells", "Effector CD4 T cells", "Effector CD4 T cells", 
+                       "Regulatory T cells", "Effector CD4 T cells", "Effector CD8 T cells", "other T cells", 
+                       "Effector CD4 T cells", "Effector CD4 T cells", "other T cells", "other T cells",
+                       "Effector CD8 T cells", "Effector CD8 T cells", "MAIT cells", "Progenitors", 
+                       "NK cells", "Monocytes - classical", "Conventional DCs", "Monocytes - intermediate", 
+                       "Plasmacytoid DCs", "B cells", "Monocytes - nonclassical", "B cells", 
+                       "Basophils", "B cells", "B cells", "B cells", "Neutrophils")
+data.integrated.clean@meta.data$cell.annotation <- plyr::mapvalues(x = data.integrated.clean@meta.data$labels.fine,
+                                                                   from = automated.annotation,
+                                                                   to = manual.annotation)
+
+## Generating the Extended data Figure for PAPER (overview of all cell types)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="cell.annotation", 
+        cols = c("#a6cee3",'#1f78b4','#ff5d00','#33a02c','#e31a1c','#fb9a99','#fdbf6f','#fdb462','#cab2d6','#6a3d9a','#ffff99','#b15928',
+            '#8dd3c7','#ffffb3','#767676','#fb8072','#737373','#80b1d3'))
+table(data.integrated.clean@meta.data$cell.annotation)
+VlnPlot(object = data.integrated.clean, group.by = "cell.annotation",
+        features = c("CD3E", "ITGAX", "NCAM1", "HLA-DRA", "CD79A", "CLU"), 
+        pt.size = 0.1, ncol = 3, cols = color.vector)
+
+## Generate the plots for Extended data Figure for REVISION (separate overview of donors)
+Idents(data.integrated.clean) <- "donor"
+table(data.integrated.clean@meta.data$donor)
+DimPlot(data.integrated.clean, reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c("#a6cee3",'#1f78b4','#ff5d00','#33a02c','#e31a1c','#fb9a99','#6a3d9a',
+                 '#767676','#fb8072','#737373','#80b1d3'))
+
+DimPlot(subset(data.integrated.clean, ident = c("Donor 1")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c("#a6cee3"))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 2")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#1f78b4'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 3")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#ff5d00'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 4")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#33a02c'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 5")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#e31a1c'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 6")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#fb9a99'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 7")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#6a3d9a'))
+DimPlot(subset(data.integrated.clean, ident = c("Donor 8")), reduction = "umap", pt.size = 0.01, label = F, 
+        cols = c('#767676'))
+
+
+## Save final Seurat object (all FINAL analyses based on this object)
+#saveRDS(data.integrated.clean, file = "~/Desktop/CD3_and_HLADR_integrated_clean_HARMONY_NEW.RDS")
+#data.integrated.clean <- readRDS(file = "~/Desktop/CD3_and_HLADR_integrated_clean_HARMONY_NEW.RDS")
+
+## Run FindAllMarkers on the cleaned data to explor the clusters
+## Use default setup and report only positive values, logfc at 0.25, diff.pct at 0.3
+## For the DE gene test use filtered gene set to get rid of mitochondrial and ribosomal transcripts
+all.genes <- rownames(data.integrated.clean@assays$RNA@data)
+genes.filtered.mt <- grep(pattern = "^MT-", all.genes, value = TRUE, invert = TRUE)
+genes.filtered <- as.vector(grep(pattern = "^RP", genes.filtered.mt, value = TRUE, invert = TRUE))
+length(all.genes)
+length(genes.filtered)
+
+Idents(data.integrated.clean) <- "RNA_snn_res.0.6"
+markers.all <- FindAllMarkers(data.integrated.clean,
+                              max.cells.per.ident = 2000,
+                              features = genes.filtered,
+                              only.pos = TRUE, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.3,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+write.csv(markers.all, "markers-all.csv")
+
+top10 <- markers.all %>% 
+    group_by(cluster) %>% 
+    top_n(n = 10, wt = avg_logFC)
+
+#Plot top10 genes for each cluster, use viridis color scheme throughout
+heatmap <- DoHeatmap(subset(data.integrated.clean, downsample = 1000), 
+                     features = top10$gene, 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+ggsave(filename = "DataALL_heatmap_top10.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+
+## Various plotting to further explore the data
+VlnPlot(object = data.integrated.clean,
+        features = c("CD14", "ITGAX", "LYZ", "IL3RA", "GZMB", "CD79A", "CD3D", "CD3E", "FOXP3", "CD4", "CD8B", "CD8A"), 
+        pt.size = 0, ncol = 3, cols = color.vector)
+ggsave(filename = "DataALL_VlnPlot_Keyproteins.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+table(data.integrated.clean@meta.data$RNA_snn_res.0.6, data.integrated.clean@meta.data$orig.ident)
+
+
+
+
+
+#################### Work on the T cell populations
+## Subset for T cell clusters only, based on singleR annotation
+Idents(data.integrated.clean) <- "cell.annotation"
+CD3.integrated <- subset(data.integrated.clean, 
+                         idents = c("Naive CD8 T cells", "Effector CD4 T cells", "Effector CD4 T cells", "Effector CD4 T cells", "Naive CD4 T cells", "other T cells", "Effector CD8 T cells",
+                                    "other T cells", "Effector CD8 T cells", "Effector CD4 T cells", "Effector CD4 T cells",
+                                    "Regulatory T cells", "other T cells", "MAIT cells"))
+CD3.integrated
+
+## Rerun UMAP and clustering (based on Harmony reduction), plot to assess
+CD3.integrated <- FindVariableFeatures(CD3.integrated, selection.method = "vst", nfeatures = 4000, verbose = T)
+CD3.integrated <- ScaleData(CD3.integrated, verbose = T)
+CD3.integrated <- RunPCA(CD3.integrated, npcs = 50, verbose = T)
+CD3.integrated <- RunUMAP(CD3.integrated, reduction = "harmony", dims = 1:30, n.neighbors = 10L, min.dist = 0.1)
+CD3.integrated <- FindNeighbors(CD3.integrated, reduction = "harmony", dims = 1:30, verbose = T)
+CD3.integrated <- FindClusters(CD3.integrated, resolution = 0.6, random.seed = 42, verbose = T)
+DimPlot(CD3.integrated, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+table(CD3.integrated@meta.data$RNA_snn_res.0.6)
+VlnPlot(object = CD3.integrated,
+        features = c("CD3E", "CD4", "CD8B", "FOXP3", "CTLA4", "CD3D", "MKI67"), pt.size = 0, ncol = 3)
+VlnPlot(CD3.integrated, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, cols = color.vector, y.max = 2000)
+VlnPlot(CD3.integrated, features = c("nCount_RNA"), ncol = 1, pt.size = 0, cols = color.vector, y.max = 15000)
+
+## Remove contaminating non T cell clusters and rerun UMAP calculation and clustering (based on Harmony reduction)
+CD3.integrated.clean <- subset(CD3.integrated, idents = c(7,11,12,13,14,15,16,17,18), invert = T)
+CD3.integrated.clean <- RunPCA(CD3.integrated.clean, npcs = 50, verbose = T)
+CD3.integrated.clean <- RunUMAP(CD3.integrated.clean, reduction = "harmony", dims = 1:30, n.neighbors = 15L, min.dist = 0.2)
+CD3.integrated.clean <- FindNeighbors(CD3.integrated.clean, reduction = "harmony", dims = 1:30, verbose = T)
+CD3.integrated.clean <- FindClusters(CD3.integrated.clean, resolution = 0.4, random.seed = 42, verbose = T)
+
+## Save T cell object for later
+#saveRDS(CD3.integrated.clean, file = "~/Desktop/ONLY_CD3_integrated_clean_HARMONY_NEW_SINGLER.RDS")
+#CD3.integrated.clean <- readRDS(file = "~/Desktop/ONLY_CD3_integrated_clean_HARMONY_NEW_SINGLER.RDS")
+
+## Check some tables to see cell number distributions across donors, tissues and sorts, and check nFeature again
+table(CD3.integrated.clean@meta.data$donor, CD3.integrated.clean@meta.data$celltype)
+table(CD3.integrated.clean@meta.data$donor, CD3.integrated.clean@meta.data$orig.ident)
+table(CD3.integrated.clean@meta.data$donor, CD3.integrated.clean@meta.data$sample)
+table(CD3.integrated.clean@meta.data$sample, CD3.integrated.clean@meta.data$orig.ident)
+table(CD3.integrated.clean@meta.data$sample)
+table(CD3.integrated.clean@meta.data$orig.ident)
+
+## Plotting of cleaned T cell data
+#Idents(CD3.integrated.clean) <- "RNA_snn_res.0.4"
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+ggsave(filename = "CD3 UMAP plot by cluster.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="orig.ident", cols = brewer.pal(3, "Set1"))
+ggsave(filename = "CD3 UMAP plot by tissue.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="sample", cols = color.vector)
+ggsave(filename = "CD3 UMAP plot by sample.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="labels", cols = color.vector)
+ggsave(filename = "CD3 UMAP plot by celltype.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = F, group.by="labels.fine", cols = color.vector)
+ggsave(filename = "CD3 UMAP plot by celltype fine.png", plot = last_plot(), dpi = 300, width = 14, height = 10)
+
+## Run FindAllMarkers on the T cell data to explore the clusters
+## Use default setup and report only positive values, logfc at 0.25, diff.pct at 0.2
+## For the DE gene test use filtered gene set to get rid of mitochondrial and ribosomal transcripts
+markers.CD3 <- FindAllMarkers(CD3.integrated.clean,
+                              max.cells.per.ident = 2000,
+                              features = genes.filtered,
+                              only.pos = TRUE, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.2,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+write.csv(markers.CD3, "markers-CD3-res0-4.csv")
+
+top10.CD3 <- markers.CD3 %>% 
+    group_by(cluster) %>% 
+    top_n(n = 10, wt = avg_logFC)
+
+# Plot top10 genes for each T cell cluster, use viridis color scheme throughout
+heatmap <- DoHeatmap(subset(CD3.integrated.clean, downsample = 1000, ident = c(0:7)), 
+                     features = top10.CD3$gene, 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = color.vector)
+
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+ggsave(filename = "CD3_heatmap_top10_viridis res0-4 NEW.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+# Various plotting to explore the T cell clusters
+VlnPlot(object = CD3.integrated.clean,
+        features = c("CD3E", "CD4", "CD8B", "CD8A", "FOXP3", "CTLA4",
+                     "KLRB1", "CCR7", "IFNG", "HAVCR2"), 
+        pt.size = 0, ncol = 4, cols = color.vector)
+ggsave(filename = "CD3_VlnPlot_Keyproteins res0-4.png", plot = last_plot(), dpi = 300, width = 25, height = 12)
+
+
+## Prepare stacked bar graphs for Supplementary figure to show cluster distribution of CD3 dataset
+# need to generate a new metadata slow to account for T cells coming from the HLADR sort
+patient.id.original <- unique(CD3.integrated.clean@meta.data$sample)
+patient.id.original
+patient.tissue.id <- c("121_blood", "121_mucosa", "122_blood", "122_mucosa", "124_blood", "124_mucosa", "125_blood", "125_mucosa", 
+                       "T002_blood", "T002_inf", "T015_blood", "T020_blood", "T020_Inf", "T027_blood", "T027_Inf",
+                       "121_mucosa", "122_mucosa", "124_mucosa", "125_mucosa",
+                       "T002_blood", "T002_inf", "T020_blood", "T020_Inf", "T027_blood", "T027_Inf")
+CD3.integrated.clean@meta.data$patient.tissue.id <- plyr::mapvalues(x = CD3.integrated.clean@meta.data$sample,
+                                                                from = patient.id.original,
+                                                                to = patient.tissue.id)
+table(CD3.integrated.clean@meta.data$sample)
+table(CD3.integrated.clean@meta.data$patient.tissue.id, CD3.integrated.clean@meta.data$donor)
+table(CD3.integrated.clean@meta.data$donor, CD3.integrated.clean@meta.data$orig.ident)
+
+# Stacked bar graph to show tissue contribution to each T cell cluster (not in paper)
+colors <- c("#377eb8", "#ff7f00", "#e41a1c")
+counts <- with(CD3.integrated.clean@meta.data, table(RNA_snn_res.0.4,orig.ident))
+ggplot(as.data.frame(counts), aes(x = RNA_snn_res.0.4, y = Freq, fill = orig.ident)) + 
+    geom_col(
+        position = "fill" #Include if you want each bar to sum to 1 for relative abundance
+    ) +
+    scale_fill_manual(values=colors) +
+    ylab("Number of Cells") +
+    theme(
+        #legend.position = "none", #removes the legend
+        axis.title.y = element_text(size=12),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.x  = element_text(angle=90, vjust=0.5, size=10))
+
+# Stacked bar graph to show cluster distribution across donors (Extended data figure)
+colors <- color.vector
+counts <- with(CD3.integrated.clean@meta.data, table(RNA_snn_res.0.4,patient.tissue.id))
+ggplot(as.data.frame(counts), aes(x = patient.tissue.id, y = Freq, fill = RNA_snn_res.0.4)) + 
+    geom_col(
+        position = "fill" #Include if you want each bar to sum to 1 for relative abundance
+    ) +
+    scale_fill_manual(values=colors) +
+    ylab("Number of Cells") +
+    theme(
+        #legend.position = "none", #removes the legend
+        axis.title.y = element_text(size=12),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.x  = element_text(angle=90, vjust=0.5, size=10))
+
+
+
+## Generate T cell Seurat objects that only contain tumor+mucosa data
+Idents(CD3.integrated.clean) <- "orig.ident"
+CD3.Tum.Muc <- subset(CD3.integrated.clean, idents = c("Tumor", "Mucosa"))
+Idents(CD3.integrated.clean) <- "RNA_snn_res.0.4"
+Idents(CD3.Tum.Muc) <- "RNA_snn_res.0.4"
+DimPlot(CD3.integrated.clean, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+DimPlot(CD3.Tum.Muc, reduction = "umap", pt.size = 0.1, label = T, cols = color.vector)
+
+## Generate module scores for revision experiments
+Th1 <- list(c("IFNG", "TBX21", "IL12RB1", "IL12RB2"))
+Th2 <- list(c("TNFSF11", "GATA3", "IL4"))
+Th17 <- list(c("RORC", "CCR6", "IL17A", "IL17F", "IL23R", "IL22", "AHR", "IL26", "CCL20"))
+Tc <- list(c("CD8B", "CD8A", "TNF", "IFNG", "IL2", "GZMB", "PRF1", "GZMA", "FAS"))
+Texhaust <- list(c("TCF7", "TOX", "HAVCR2", "PDCD1", "LAG3"))
+Treg <- list(c("FOXP3", "CTLA4", "IL2RA", "IL2RB", "ENTPD1"))
+
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Th1, name = "Th1")
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Th2, name = "Th2")
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Th17, name = "Th17")
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Tc, name = "Tc")
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Texhaust, name = "Texhaust")
+CD3.Tum.Muc <- AddModuleScore(CD3.Tum.Muc, features = Treg, name = "Treg")
+
+#Plotting of module scores for Extended Data Figure
+FeaturePlot(CD3.Tum.Muc, features = c("Th11", "Th21", "Th171", "Tc1", "Treg1", "Texhaust1"),
+            cols = c("#440154FF", "#238A8DFF", "#FDE725FF"), pt.size = 0.1, max.cutoff = "q95")
+
+FeaturePlot(CD3.Tum.Muc, features = c("CD8A", "CD4", "FOXP3", "Th11", "Th21", "Th171", "Tc1", "Treg1", "Texhaust1"),
+            cols = c("#440154FF", "#238A8DFF", "#FDE725FF"), pt.size = 0.1, max.cutoff = "q95")
+
+VlnPlot(object = CD3.Tum.Muc, features = c("CD8A", "CD4", "FOXP3", "TCF7", "TBX21", "HAVCR2"), 
+        pt.size = 0, ncol = 3, cols = color.vector)
+
+VlnPlot(object = CD3.Tum.Muc, features = c("Th11", "Th171", "Tc1", "Treg1", "Texhaust1"), 
+        pt.size = 0, ncol = 3, cols = color.vector)
+
+VlnPlot(object = CD3.Tum.Muc, features = c("CD8B", "EOMES", "TBX21", "GATA3", "FOXP3"), 
+        pt.size = 0, ncol = 3, cols = color.vector)
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "4")), group.by = "orig.ident",
+        features = c("EOMES"),
+        pt.size = 0, ncol = 4, cols = c("#377eb8", "#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "2")), group.by = "orig.ident",
+        features = c("GATA3"),
+        pt.size = 0, ncol = 4, cols = c("#377eb8", "#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "5")), group.by = "orig.ident",
+        features = c("FOXP3"),
+        pt.size = 0, ncol = 4, cols = c("#377eb8", "#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "2")), group.by = "orig.ident",
+        features = c("Th11"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "2")), group.by = "orig.ident",
+        features = c("Th21"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "5")), group.by = "orig.ident",
+        features = c("Treg1"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "2")), group.by = "orig.ident",
+        features = c("Th171"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "3")), group.by = "orig.ident",
+        features = c("Tc1"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "4")), group.by = "orig.ident",
+        features = c("Texhaust1"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+VlnPlot((object = subset(CD3.Tum.Muc, idents = "6")), group.by = "orig.ident",
+        features = c("Texhaust1"),
+        pt.size = 0, ncol = 4, cols = c("#ff7f00", "#e41a1c"))
+
+
+
+
+
+
+
+############## Work on HLADR population
+## Subset for myeloid/APC clusters and clean up
+#HLADR.integrated <- subset(data.integrated.clean, idents = c(3,5,6,7,9,18,20,17,16,15))
+Idents(data.integrated.clean) <- "cell.annotation"
+HLADR.integrated <- subset(data.integrated.clean, idents = c("Monocytes - intermediate", 
+                           "Monocytes - classical", "Monocytes - nonclassical", "Conventional DCs", "Plasmacytoid DCs",
+                           "Basophils"))
+HLADR.integrated
+table(HLADR.integrated@meta.data$orig.ident)
+
+HLADR.integrated <- FindVariableFeatures(HLADR.integrated, selection.method = "vst", nfeatures = 4000, verbose = T)
+HLADR.integrated <- ScaleData(HLADR.integrated, verbose = T)
+HLADR.integrated <- RunPCA(HLADR.integrated, npcs = 50, verbose = T)
+HLADR.integrated <- RunUMAP(HLADR.integrated, reduction = "harmony", dims = 1:50, n.neighbors = 10L, min.dist = 0.1)
+HLADR.integrated <- FindNeighbors(HLADR.integrated, reduction = "harmony", dims = 1:50, verbose = T)
+HLADR.integrated <- FindClusters(HLADR.integrated, resolution = 1.2, random.seed = 42, verbose = T)
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = T, cols = color.vector)
+table(HLADR.integrated@meta.data$RNA_snn_res.1.2)
+VlnPlot(object = HLADR.integrated, features = c("nCount_RNA", "nFeature_RNA"), pt.size = 0)
+VlnPlot(object = HLADR.integrated, features = c("CD3E", "CD79A", "GZMB", "MKI67"), pt.size = 0)
+
+## Remove contaminating clusters and rerun UMAP calculation and clustering (based on Harmony reduction)
+HLADR.integrated.uncleaned <- HLADR.integrated
+HLADR.integrated <- subset(HLADR.integrated, idents = c(23,20,24,25,26), invert = T)
+HLADR.integrated <- FindVariableFeatures(HLADR.integrated, selection.method = "vst", nfeatures = 4000, verbose = T)
+HLADR.integrated <- RunUMAP(HLADR.integrated, reduction = "harmony", dims = 1:50, n.neighbors = 15L, min.dist = 0.2)
+HLADR.integrated <- FindNeighbors(HLADR.integrated, reduction = "harmony", dims = 1:50, verbose = T)
+HLADR.integrated <- FindClusters(HLADR.integrated, resolution = 0.2, random.seed = 42, verbose = T)
+HLADR.integrated@meta.data$RNA_snn_res.0.2 <- plyr::mapvalues(x = HLADR.integrated@meta.data$RNA_snn_res.0.2,
+                                                                   from = c(0,1,2,3,4,5,6,7,8,9),
+                                                                   to = c(0,1,2,3,4,5,6,3,0,7))
+
+## Check some tables to see cell number distributions across donors, tissues and sorts, and check nFeature again
+table(HLADR.integrated@meta.data$donor, HLADR.integrated@meta.data$celltype)
+table(HLADR.integrated@meta.data$donor, HLADR.integrated@meta.data$orig.ident)
+table(HLADR.integrated@meta.data$donor, HLADR.integrated@meta.data$sample)
+table(HLADR.integrated@meta.data$sample, HLADR.integrated@meta.data$orig.ident)
+table(HLADR.integrated@meta.data$sample)
+table(HLADR.integrated@meta.data$orig.ident)
+
+## Save APC object for later
+#saveRDS(HLADR.integrated, file = "~/Desktop/ONLY_HLADR_integrated_clean_HARMONY_NEW_SINGLER.RDS")
+#HLADR.integrated <- readRDS(file = "~/Desktop/ONLY_HLADR_integrated_clean_HARMONY_NEW_SINGLER.RDS")
+
+
+
+## Plotting of cleaned.data
+Idents(HLADR.integrated) <- "RNA_snn_res.0.2"
+color.vector <- c(brewer.pal(8, "Set1"), brewer.pal(12, "Set3"), brewer.pal(8, "Dark2"), brewer.pal(8, "Accent"))
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = T, cols = color.vector)
+ggsave(filename = "HLADR UMAP plot by cluster.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = F, group.by="orig.ident", cols = brewer.pal(3, "Set1"))
+ggsave(filename = "HLADR UMAP plot by tissue.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = F, group.by="sample", cols = color.vector)
+ggsave(filename = "HLADR UMAP plot by sample.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = F, group.by="labels", cols = color.vector)
+ggsave(filename = "HLADR UMAP plot by celltype.png", plot = last_plot(), dpi = 300, width = 12, height = 10)
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = F, group.by="labels", cols = color.vector)
+ggsave(filename = "HLADR UMAP plot by celltype fine.png", plot = last_plot(), dpi = 300, width = 14, height = 10)
+
+
+## Run FindAllMarkers on the APC data to explore the clusters
+## Use default setup and report only positive values, logfc at 0.25, diff.pct at 0.2
+## For the DE gene test use filtered gene set to get rid of mitochondrial and ribosomal transcripts
+markers.HLADR <- FindAllMarkers(HLADR.integrated,
+                                max.cells.per.ident = 3000,
+                                features = genes.filtered,
+                                only.pos = TRUE, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.2,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+write.csv(markers.HLADR, "markers-HLADR res0-2.csv")
+
+top10.HLADR <- markers.HLADR %>% 
+    group_by(cluster) %>% 
+    top_n(n = 10, wt = avg_logFC)
+
+# Plot top10 genes for each cluster, use viridis color scheme throughout
+heatmap <- DoHeatmap(subset(HLADR.integrated, downsample = 2000),
+                     features = top10.HLADR$gene,
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = color.vector)
+
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+ggsave(filename = "HLADR_heatmap_top10 res0-2 viridis NEW.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+table(HLADR.integrated@meta.data$RNA_snn_res.0.2, HLADR.integrated@meta.data$orig.ident)
+
+# Various plotting to explore the HLADR clusters
+VlnPlot(object = HLADR.integrated,
+        features = c("nCount_RNA", "nFeature_RNA"))
+
+VlnPlot(object = HLADR.integrated,
+        features = c("CD14", "FCGR3A", "ITGAX", "IL3RA", "CD1C", "CLEC10A", "CLEC9A", "XCR1", 
+                     "IRF4", "IRF8"), 
+        pt.size = 0, ncol = 4, cols = color.vector)
+ggsave(filename = "HLADR_VlnPlot_Keyproteins_NEW.png", plot = last_plot(), dpi = 300, width = 25, height = 12)
+
+DimPlot(HLADR.Muc, reduction = "umap", pt.size = 0.3, label = T, cols = color.vector)
+VlnPlot(object = HLADR.Muc,
+        features = c("IL1A", "IL1B", "IL15", "IL18", "ICOSLG", 
+                     "CXCL16", "CD40", "TGFB1", "IL12A", "TNFSF4"), pt.size = 0, ncol = 2, cols = color.vector)
+
+DimPlot(HLADR.Tum, reduction = "umap", pt.size = 0.3, label = T, cols = color.vector)
+VlnPlot(object = HLADR.Tum,
+        features = c("IL1A", "IL1B", "IL15", "IL18", "ICOSLG", 
+                     "CXCL16", "CD40", "TGFB1", "IL12A", "RANTES"), pt.size = 0, ncol = 2, cols = color.vector)
+
+
+## Generate heatmap for Figure 2 (selected genes from top10)
+Idents(HLADR.integrated) <- "RNA_snn_res.0.2"
+DimPlot(HLADR.integrated, reduction = "umap", pt.size = 0.3, label = F, cols = color.vector)
+
+heatmap <- DoHeatmap(subset(HLADR.integrated, downsample = 2000),
+                     features = c("S100A8", "S100A12", "VCAN", "CSF3R",
+                                  "FCGR3A", "IFITM2", "TCF7L2", "CFD",
+                                  "FCER1A", "CLEC10A", "CD1C", "CD1E",
+                                  "CD14", "C1QB", "MMP9", "CTSB",
+                                  "GZMB", "IRF7", "TCF4", "IRF8",
+                                  "CPA3", "CLU", "IL1RL1", "GATA2",
+                                  "C1orf54", "CLEC9A", "CADM1", "ID2",
+                                  "BIRC3", "CCR7", "CCL19", "LAMP3", "CSF2RA"),
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = color.vector)
+
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+ggsave(filename = "HLADR_heatmap_selected res0-4 viridis NEW.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+ggsave(filename = "HLADR_heatmap_selected res0-4 viridis NEW.svg", plot = last_plot(), dpi = 300, width = 15, height = 15)
+
+## Generate UMAP heatmap overlays for extended data figure (Revision)
+FeaturePlot(HLADR.integrated, features = c("ITGAX", "CD14", "FCGR3A", "IL3RA", "CLEC10A", 
+                                           "CLEC9A", "IRF4", "IRF8", "LAMP3", "CPA3"), 
+            pt.size = 0.1, ncol = 3, cols = c("#440154FF", "#238A8DFF", "#FDE725FF"),
+            min.cutoff = "q1", max.cutoff = "q90")
+
+FeaturePlot(data.integrated.clean, features = c("CD3E", "HLA-DRA", "ITGAX", "CD14"),
+            pt.size = 0.1, ncol = 2, cols = c("#440154FF", "#238A8DFF", "#FDE725FF"),
+            min.cutoff = "q1", max.cutoff = "q90")
+
+table(HLADR.integrated@meta.data$RNA_snn_res.0.2, HLADR.integrated@meta.data$labels.fine)
+
+
+
+## Generate HLADR Seurat objects that only contain tumor+mucosa or only tumor or mucosa data
+## Later used for plotting of ligand transcripts
+Idents(HLADR.integrated) <- "orig.ident"
+HLADR.Tum <- subset(HLADR.integrated, idents = c("Tumor"))
+HLADR.Tum
+Idents(HLADR.Tum) <- "RNA_snn_res.0.2"
+HLADR.Muc <- subset(HLADR.integrated, idents = c("Mucosa"))
+HLADR.Muc
+Idents(HLADR.Muc) <- "RNA_snn_res.0.2"
+HLADR.Tum.Muc <- subset(HLADR.integrated, idents = c("Mucosa", "Tumor"))
+HLADR.Tum.Muc
+Idents(HLADR.Tum.Muc) <- "RNA_snn_res.0.2"
+
+## Generate Dotplots for main figure 2, use only cells from tumor and mucosa
+DotPlot(HLADR.Tum.Muc, features = c("CD40", "CD80", "CD86", "PDCD1LG2", "CD274", "CD83", "CD84",
+                                    "BTLA", "ICOSLG", "CXCL2", "CCL1", "CXCL3", "CXCL8", "CXCL9", "CXCL10", "CXCL16", "CCL3", "CCL17", "CCL22",
+                                    "EBI3", "IL1A", "IL1B", "TNF", "IL15", "IL18") %>% rev(), cols = c("#238A8DFF", "#FDE725FF"),
+        dot.scale = 18, scale = T, col.min = -1.5, col.max = 1.5, scale.min = 0, scale.max = 75) + RotatedAxis()
+
+
+## Playing around with various visualisations to further explore the data
+DotPlot(HLADR.Tum.Muc, features = c("MRC1", "ALCAM", "CXCL16",
+                                "VEGFB", "IL18BP", "CXCL9",
+                                "EBI3", "CCL22", "CCL17") %>% rev(), cols = c("#238A8DFF", "#FDE725FF"),
+        dot.scale = 24, scale = T, col.min = -1.5, col.max = 1.5, scale.min = 0, scale.max = 75) + RotatedAxis()
+
+VlnPlot(HLADR.Tum.Muc, features = c("CD40", "CD80", "CD86", "PDCD1LG2", "CD274", "CD83", "CD84",
+                                    "BTLA", "ICOSLG"), cols = color.vector, pt.size = 0)
+
+DotPlot(HLADR.Tum.Muc, features = c("CD40", "CD80", "CD86", "PDCD1LG2", "CD274", "CD83", "CD84",
+                                    "BTLA", "ICOSLG", "CXCL2", "CCL1", "CXCL3", "CXCL8", "CXCL9", "CXCL10", "CXCL16", "CCL3", "CCL17", "CCL22",
+                                    "EBI3", "IL1A", "IL1B", "TNF", "IL15", "IL18") %>% rev(), cols = c("#238A8DFF", "#FDE725FF"),
+        dot.scale = 18, scale = T, col.min = -1.5, col.max = 1.5, scale.min = 0, scale.max = 75) + RotatedAxis()
+
+
+heatmap <- DoHeatmap(subset(HLADR.Tum.Muc, downsample = 2000),
+                     features = c("CD40", "CD80", "CD86", "PDCD1LG2", "CD274", "ALCAM", "CD84",
+                                  "BTLA", "ICOSLG", "CXCL9", "CXCL10", "CXCL16", "CCL3", "CCL17", "CCL22",
+                                  "GZMB", "EBI3", "TGFB1", "IL1A", "IL1B", "IL15", "IL18"),
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = color.vector)
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+
+
+## Prepare stacked bar graphs for Supplementary figure to show cluster distribution of HLADR dataset
+# need to generate a new metadata slow to account for the few HLADR cells coming from T cell sort
+patient.id.original <- unique(HLADR.integrated@meta.data$sample)
+patient.tissue.id <- c("121_mucosa", "122_blood", "124_blood", "124_mucosa", "125_mucosa", "T002_blood",
+                "T002_inf", "T015_blood", "T020_blood", "T020_Inf", "T027_blood", "T027_Inf",
+                "121_blood", "121_mucosa", "122_blood", "122_mucosa", "124_mucosa", "125_blood", "125_mucosa",
+                "T002_blood", "T002_inf", "T015_inf", "T020_blood", "T020_Inf", "T027_blood", "T027_Inf")
+HLADR.integrated@meta.data$patient.tissue.id <- plyr::mapvalues(x = HLADR.integrated@meta.data$sample,
+                                                                   from = patient.id.original,
+                                                                   to = patient.tissue.id)
+table(HLADR.integrated@meta.data$patient.tissue.id)
+
+
+# Stacked bar graph to show tissue contribution to each APC cluster (Extended data figure)
+colors <- c("#377eb8", "#ff7f00", "#e41a1c")
+counts <- with(HLADR.integrated@meta.data, table(RNA_snn_res.0.2,orig.ident))
+ggplot(as.data.frame(counts), aes(x = RNA_snn_res.0.2, y = Freq, fill = orig.ident)) + 
+    geom_col(
+        position = "fill" #Include if you want each bar to sum to 1 for relative abundance
+    ) +
+    scale_fill_manual(values=colors) +
+    ylab("Number of Cells") +
+    theme(
+        #legend.position = "none", #removes the legend
+        axis.title.y = element_text(size=12),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.x  = element_text(angle=90, vjust=0.5, size=10))
+
+# Stacked bar graph to show cluster distribution across donors (Figure 2)
+colors <- color.vector
+counts <- with(HLADR.integrated@meta.data, table(RNA_snn_res.0.2,patient.tissue.id))
+ggplot(as.data.frame(counts), aes(x = patient.tissue.id, y = Freq, fill = RNA_snn_res.0.2)) + 
+    geom_col(
+        position = "fill" #Include if you want each bar to sum to 1 for relative abundance
+    ) +
+    scale_fill_manual(values=colors) +
+    ylab("Number of Cells") +
+    theme(
+        #legend.position = "none", #removes the legend
+        axis.title.y = element_text(size=12),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.x  = element_text(angle=90, vjust=0.5, size=10))
+
+
+
+
+
+
+
+############# Analysis of individual clusters for DE genes
+## Workflow: generate a temporary object copy either from the CD3 or HLADR object
+## temp.object name is the same throughout the workflow
+## Workflow goes through each cluster to identify the conserved markers, and DE genes for mucosa+tumor over blood, and tumor over mucosa
+## Run one time with each object, get the DE gene lists, plots and number of DE genes for each run
+
+# Pick either the HLADR or the CD3 object to copy
+temp.object <- HLADR.integrated
+#temp.object <- CD3.integrated.clean
+DimPlot(temp.object)
+
+## Subsetting and differential genes among clusters, cluster0
+cluster0.object <- subset(temp.object, idents = "0")
+DefaultAssay(cluster0.object) <- "RNA"
+Idents(cluster0.object) <- "orig.ident"
+
+cluster0.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 0, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster0.conserved)
+
+cluster0.tissues <- FindMarkers(cluster0.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster0.tumor <- FindMarkers(cluster0.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster0.tissues
+cluster0.tumor
+
+cluster0.tissues.grouped <- cluster0.tissues[order(cluster0.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster0.tissues.grouped)
+cluster0.tumor.grouped <- cluster0.tumor[order(cluster0.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster0.tumor.grouped)
+
+levels(cluster0.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster0.object, downsample = 1000), 
+                     features = rownames(cluster0.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster0.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+levels(cluster0.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster0.object, downsample = 1000), 
+                     features = rownames(cluster0.tumor), 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = color.vector)
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster0.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster0.tissues <- VlnPlot(object = cluster0.object, group.by = "orig.ident",
+                                 features = rownames(cluster0.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster0.tissues.png", plot = plot.cluster0.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster0.tumor <- VlnPlot(object = cluster0.object, group.by = "orig.ident",
+                               features = rownames(cluster0.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster0.tumor.png", plot = plot.cluster0.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster0.tumor <- VlnPlot(object = cluster0.object, group.by = "orig.ident",
+                               features = rownames(cluster0.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster0.conserved.png", plot = plot.cluster0.tumor, dpi = 300, width = 20, height = 15)
+
+
+
+## Subsetting and differential genes among clusters, cluster1
+cluster1.object <- subset(temp.object, idents = "1")
+DefaultAssay(cluster1.object) <- "RNA"
+Idents(cluster1.object) <- "orig.ident"
+
+cluster1.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 1, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster1.conserved)
+
+cluster1.tissues <- FindMarkers(cluster1.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster1.tumor <- FindMarkers(cluster1.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster1.tissues
+cluster1.tumor
+
+cluster1.tissues.grouped <- cluster1.tissues[order(cluster1.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster1.tissues.grouped)
+cluster1.tumor.grouped <- cluster1.tumor[order(cluster1.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster1.tumor.grouped)
+
+
+levels(cluster1.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster1.object, downsample = 1000), 
+                     features = rownames(cluster1.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster1.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster1.object, downsample = 1000), 
+                     features = rownames(cluster1.tumor), 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#bdbbff", "#FFFFFF", "#c20000"))
+ggsave(filename = "heatmap.cluster1.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster1.tissues <- VlnPlot(object = cluster1.object, group.by = "orig.ident",
+                                 features = rownames(cluster1.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster1.tissues.png", plot = plot.cluster1.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster1.tumor <- VlnPlot(object = cluster1.object, group.by = "orig.ident",
+                               features = rownames(cluster1.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster1.tumor.png", plot = plot.cluster1.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster1.tumor <- VlnPlot(object = cluster1.object, group.by = "orig.ident",
+                               features = rownames(cluster1.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster1.conserved.png", plot = plot.cluster1.tumor, dpi = 300, width = 20, height = 15)
+
+
+## Subsetting and differential genes among clusters, cluster 2
+cluster2.object <- subset(temp.object, idents = "2")
+DefaultAssay(cluster2.object) <- "RNA"
+Idents(cluster2.object) <- "orig.ident"
+
+cluster2.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 2, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster2.conserved)
+
+cluster2.tissues <- FindMarkers(cluster2.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster2.tumor <- FindMarkers(cluster2.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster2.tissues
+cluster2.tumor
+
+cluster2.tissues.grouped <- cluster2.tissues[order(cluster2.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster2.tissues.grouped)
+cluster2.tumor.grouped <- cluster2.tumor[order(cluster2.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster2.tumor.grouped)
+
+
+levels(cluster2.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster2.object, downsample = 1000), 
+                     features = rownames(cluster2.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster2.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster2.object, downsample = 1000), 
+                     features = rownames(cluster2.tumor), 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#bdbbff", "#FFFFFF", "#c20000"))
+ggsave(filename = "heatmap.cluster2.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster2.tissues <- VlnPlot(object = cluster2.object, group.by = "orig.ident",
+                                 features = rownames(cluster2.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster2.tissues.png", plot = plot.cluster2.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster2.tumor <- VlnPlot(object = cluster2.object, group.by = "orig.ident",
+                               features = rownames(cluster2.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster2.tumor.png", plot = plot.cluster2.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster2.tumor <- VlnPlot(object = cluster2.object, group.by = "orig.ident",
+                               features = rownames(cluster2.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster2.conserved.png", plot = plot.cluster2.tumor, dpi = 300, width = 20, height = 15)
+
+
+## Subsetting and differential genes among clusters, cluster 3
+cluster3.object <- subset(temp.object, idents = "3")
+DefaultAssay(cluster3.object) <- "RNA"
+Idents(cluster3.object) <- "orig.ident"
+
+cluster3.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 3, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster3.conserved)
+
+cluster3.tissues <- FindMarkers(cluster3.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster3.tumor <- FindMarkers(cluster3.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster3.tissues
+write.csv(cluster3.tissues, "cluster3.tissues.csv")
+cluster3.tumor
+write.csv(cluster3.tumor, "cluster3.tumor.csv")
+
+cluster3.tissues.grouped <- cluster3.tissues[order(cluster3.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster3.tissues.grouped)
+cluster3.tumor.grouped <- cluster3.tumor[order(cluster3.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster3.tumor.grouped)
+
+
+levels(cluster3.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster3.object, downsample = 1000), 
+                     features = rownames(cluster3.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster3.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster3.object, downsample = 1000), 
+                     features = c(rownames(cluster3.tumor)[1:30], "CD81", "CXCL16", "TGFB1"), 
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster3.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster3.tissues <- VlnPlot(object = cluster3.object, group.by = "orig.ident",
+                                 features = rownames(cluster3.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster3.tissues.png", plot = plot.cluster3.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster3.tumor <- VlnPlot(object = cluster3.object, group.by = "orig.ident",
+                               features = rownames(cluster3.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster3.tumor.png", plot = plot.cluster3.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster3.tumor <- VlnPlot(object = cluster3.object, group.by = "orig.ident",
+                               features = rownames(cluster3.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster3.conserved.png", plot = plot.cluster3.tumor, dpi = 300, width = 20, height = 15)
+
+
+## Subsetting and differential genes among clusters, cluster 4
+cluster4.object <- subset(temp.object, idents = "4")
+DefaultAssay(cluster4.object) <- "RNA"
+Idents(cluster4.object) <- "orig.ident"
+
+cluster4.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 4, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster4.conserved)
+
+cluster4.tissues <- FindMarkers(cluster4.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster4.tumor <- FindMarkers(cluster4.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster4.tissues
+cluster4.tumor
+write.csv(cluster4.tumor, "cluster4.tumor.csv")
+
+cluster4.tissues.grouped <- cluster4.tissues[order(cluster4.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster4.tissues.grouped)
+cluster4.tumor.grouped <- cluster4.tumor[order(cluster4.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster4.tumor.grouped)
+
+
+levels(cluster4.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster4.object, downsample = 1000), 
+                     features = rownames(cluster4.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster4.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster4.object, downsample = 1000), 
+                     features = rownames(cluster4.tumor)[1:30], 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster4.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster4.tissues <- VlnPlot(object = cluster4.object, group.by = "orig.ident",
+                                 features = rownames(cluster4.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster4.tissues.png", plot = plot.cluster4.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster4.tumor <- VlnPlot(object = cluster4.object, group.by = "orig.ident",
+                               features = rownames(cluster4.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster4.tumor.png", plot = plot.cluster4.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster4.tumor <- VlnPlot(object = cluster4.object, group.by = "orig.ident",
+                               features = rownames(cluster4.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster4.conserved.png", plot = plot.cluster4.tumor, dpi = 300, width = 20, height = 15)
+
+
+## Subsetting and differential genes among clusters, cluster 5
+cluster5.object <- subset(temp.object, idents = "5")
+DefaultAssay(cluster5.object) <- "RNA"
+Idents(cluster5.object) <- "orig.ident"
+
+cluster5.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 5, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster5.conserved)
+
+cluster5.tissues <- FindMarkers(cluster5.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster5.tumor <- FindMarkers(cluster5.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster5.tissues
+cluster5.tumor
+write.csv(cluster5.tumor, "cluster5.tumor.csv")
+
+cluster5.tissues.grouped <- cluster5.tissues[order(cluster5.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster5.tissues.grouped)
+cluster5.tumor.grouped <- cluster5.tumor[order(cluster5.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster5.tumor.grouped)
+
+
+heatmap <- DoHeatmap(subset(cluster5.object, downsample = 1000), 
+                     features = rownames(cluster5.tissues), 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster5.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster5.object, downsample = 1000), 
+                     features = rownames(cluster5.tumor)[1:30], 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster5.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15))
+
+plot.cluster5.tissues <- VlnPlot(object = cluster5.object, group.by = "orig.ident",
+                                 features = rownames(cluster5.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster5.tissues.png", plot = plot.cluster5.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster5.tumor <- VlnPlot(object = cluster5.object, group.by = "orig.ident",
+                               features = rownames(cluster5.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster5.tumor.png", plot = plot.cluster5.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster5.tumor <- VlnPlot(object = cluster5.object, group.by = "orig.ident",
+                               features = rownames(cluster5.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster5.conserved.png", plot = plot.cluster5.tumor, dpi = 300, width = 20, height = 15)
+
+
+## Subsetting and differential genes among clusters, cluster 6
+cluster6.object <- subset(temp.object, idents = "6")
+DefaultAssay(cluster6.object) <- "RNA"
+Idents(cluster6.object) <- "orig.ident"
+
+cluster6.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 6, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster6.conserved)
+
+cluster6.tissues <- FindMarkers(cluster6.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster6.tumor <- FindMarkers(cluster6.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster6.tissues
+write.csv(cluster6.tissues, "cluster6.tissues.csv")
+cluster6.tumor
+write.csv(cluster6.tumor, "cluster6.tumor.csv")
+
+cluster6.tissues.grouped <- cluster6.tissues[order(cluster6.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster6.tissues.grouped)
+cluster6.tumor.grouped <- cluster6.tumor[order(cluster6.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster6.tumor.grouped)
+
+
+
+levels(cluster6.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster6.object, downsample = 1000), 
+                     features = rownames(cluster6.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster6.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster6.object, downsample = 1000), 
+                     features = c(rownames(cluster6.tumor)[1:30]), 
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster6.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster6.tissues <- VlnPlot(object = cluster6.object, group.by = "orig.ident",
+                                 features = rownames(cluster6.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster6.tissues.png", plot = plot.cluster6.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster6.tumor <- VlnPlot(object = cluster6.object, group.by = "orig.ident",
+                               features = rownames(cluster6.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster6.tumor.png", plot = plot.cluster6.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster6.tumor <- VlnPlot(object = cluster6.object, group.by = "orig.ident",
+                               features = rownames(cluster6.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster6.conserved.png", plot = plot.cluster6.tumor, dpi = 300, width = 20, height = 15)
+
+## Subsetting and differential genes among clusters, cluster 7
+cluster7.object <- subset(temp.object, idents = "7")
+DefaultAssay(cluster7.object) <- "RNA"
+Idents(cluster7.object) <- "orig.ident"
+
+cluster7.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 7, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster7.conserved)
+
+cluster7.tissues <- FindMarkers(cluster7.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster7.tumor <- FindMarkers(cluster7.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster7.tissues
+cluster7.tumor
+
+cluster7.tissues.grouped <- cluster7.tissues[order(cluster7.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster7.tissues.grouped)
+cluster7.tumor.grouped <- cluster7.tumor[order(cluster7.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster7.tumor.grouped)
+
+
+levels(cluster7.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster7.object, downsample = 1000), 
+                     features = rownames(cluster7.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF"))
+ggsave(filename = "heatmap.cluster7.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster7.object, downsample = 1000), 
+                     features = rownames(cluster7.tumor), 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#bdbbff", "#FFFFFF", "#c20000"))
+ggsave(filename = "heatmap.cluster7.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster7.tissues <- VlnPlot(object = cluster7.object, group.by = "orig.ident",
+                                 features = rownames(cluster7.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster7.tissues.png", plot = plot.cluster7.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster7.tumor <- VlnPlot(object = cluster7.object, group.by = "orig.ident",
+                               features = rownames(cluster7.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster7.tumor.png", plot = plot.cluster7.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster7.tumor <- VlnPlot(object = cluster7.object, group.by = "orig.ident",
+                               features = rownames(cluster7.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster7.conserved.png", plot = plot.cluster7.tumor, dpi = 300, width = 20, height = 15)
+
+
+
+
+## Subsetting and differential genes among clusters, cluster 9
+cluster9.object <- subset(temp.object, idents = "9")
+DefaultAssay(cluster9.object) <- "RNA"
+Idents(cluster9.object) <- "orig.ident"
+
+cluster9.conserved <- FindConservedMarkers(temp.object, 
+                                           ident.1 = 9, 
+                                           grouping.var = "orig.ident",
+                                           verbose = TRUE)
+rownames(cluster9.conserved)
+
+cluster9.tissues <- FindMarkers(cluster9.object,
+                                ident.1 = c("Mucosa", "Tumor"),
+                                ident.2 = c("Blood"),
+                                features = genes.filtered,
+                                only.pos = T, 
+                                min.pct = 0.25, 
+                                logfc.threshold = 0.25,
+                                min.diff.pct = 0.25,
+                                test.use = "MAST",
+                                verbose = T,
+                                latent.vars = "nCount_RNA")
+
+cluster9.tumor <- FindMarkers(cluster9.object,
+                              ident.1 = "Tumor",
+                              ident.2 = "Mucosa",
+                              features = genes.filtered,
+                              only.pos = T, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              min.diff.pct = 0.25,
+                              test.use = "MAST",
+                              verbose = T,
+                              latent.vars = "nCount_RNA")
+
+cluster9.tissues
+cluster9.tumor
+
+cluster9.tissues.grouped <- cluster9.tissues[order(cluster9.tissues$avg_logFC, decreasing = T), ]
+rownames(cluster9.tissues.grouped)
+cluster9.tumor.grouped <- cluster9.tumor[order(cluster9.tumor$avg_logFC, decreasing = T), ]
+rownames(cluster9.tumor.grouped)
+
+
+levels(cluster9.object) <- c("Blood", "Mucosa", "Tumor")
+heatmap <- DoHeatmap(subset(cluster9.object, downsample = 1000), 
+                     features = rownames(cluster9.tissues)[1:30], 
+                     slot = "scale.data",
+                     group.bar = T,
+                     draw.lines = T,
+                     disp.min = -1.5, disp.max = 1.5,
+                     raster = F,
+                     group.colors = c("#377eb8", "#ff7f00", "#BE1E2D"))
+heatmap + scale_fill_gradientn(colors = c("#440154FF", "#238A8DFF", "#FDE725FF")) + theme(axis.text.y = element_text(size = 20))
+ggsave(filename = "heatmap.cluster9.tissues.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+heatmap <- DoHeatmap(subset(cluster9.object, downsample = 1000), 
+                     features = rownames(cluster9.tumor), 
+                     group.bar = T,
+                     draw.lines = F,
+                     disp.min = -2.5, disp.max = 2.5,
+                     raster = F)
+heatmap + scale_fill_gradientn(colors = c("#bdbbff", "#FFFFFF", "#c20000"))
+ggsave(filename = "heatmap.cluster9.tumor.png", plot = last_plot(), dpi = 300, width = 20, height = 15)
+
+plot.cluster9.tissues <- VlnPlot(object = cluster9.object, group.by = "orig.ident",
+                                 features = rownames(cluster9.tissues.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster9.tissues.png", plot = plot.cluster9.tissues, dpi = 300, width = 20, height = 15)
+
+plot.cluster9.tumor <- VlnPlot(object = cluster9.object, group.by = "orig.ident",
+                               features = rownames(cluster9.tumor.grouped)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster9.tumor.png", plot = plot.cluster9.tumor, dpi = 300, width = 20, height = 15)
+
+plot.cluster9.tumor <- VlnPlot(object = cluster9.object, group.by = "orig.ident",
+                               features = rownames(cluster9.conserved)[1:30], pt.size = 0.1, ncol = 6, cols = brewer.pal(3, "Set1"))
+ggsave(filename = "plot.cluster9.conserved.png", plot = plot.cluster9.tumor, dpi = 300, width = 20, height = 15)
+
+
+
+
+
+
+
+
+## Get the number of DE genes as determined by MAST in the workflow above
+## Needs to be repeated separately for the T cell and the HLADR objects
+dim(cluster0.tumor)
+dim(cluster1.tumor)
+dim(cluster2.tumor)
+dim(cluster3.tumor)
+dim(cluster4.tumor)
+dim(cluster5.tumor)
+dim(cluster6.tumor)
+dim(cluster7.tumor)
+dim(cluster8.tumor)
+dim(cluster9.tumor)
+
+
+dim(cluster0.tissues)
+dim(cluster1.tissues)
+dim(cluster2.tissues)
+dim(cluster3.tissues)
+dim(cluster4.tissues)
+dim(cluster5.tissues)
+dim(cluster6.tissues)
+dim(cluster7.tissues)
+dim(cluster8.tissues)
+
+
+
